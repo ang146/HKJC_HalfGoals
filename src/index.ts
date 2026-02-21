@@ -29,7 +29,7 @@ db.exec(`
 `);
 
 const insertAlertStmt = db.prepare(
-  `INSERT INTO sent_alerts (alert_key, created_at) VALUES (?, ?)`
+  `INSERT INTO sent_alerts (alert_key, created_at) VALUES (?, ?)`,
 );
 
 function tryMarkAsSent(alertKey: string): boolean {
@@ -46,23 +46,29 @@ const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 function buildAlertKey(opts: {
   matchId: string | number;
   oddsType: "HIL" | "FHL" | "FCH";
-  condition: string;  // e.g. "0.5/1.0"
-  side: string;       // e.g. "H"
+  condition: string; // e.g. "0.5/1.0"
+  side: string; // e.g. "H"
 }) {
   return `${opts.matchId}|${opts.oddsType}|${opts.condition}|${opts.side}`;
 }
 
 async function scanAndSendOnce() {
-  let sleepTime = 60_000; // 1 minute
-  
   console.log(`[${new Date().toISOString()}] scanning...`);
 
   const allMatches = await footballApi.getAllFootballMatches();
 
   for (const match of allMatches) {
     if (match.poolInfo.inplayPools.length <= 0) continue;
-    if ((match.runningResult?.awayScore ?? 1) > 0 || (match.runningResult?.homeScore ?? 1) > 0) continue;
-    if (!match.poolInfo.inplayPools.includes("FHL") && !match.poolInfo.inplayPools.includes("HIL")) continue;
+    if (
+      (match.runningResult?.awayScore ?? 1) > 0 ||
+      (match.runningResult?.homeScore ?? 1) > 0
+    )
+      continue;
+    if (
+      !match.poolInfo.inplayPools.includes("FHL") &&
+      !match.poolInfo.inplayPools.includes("HIL")
+    )
+      continue;
 
     const matchId = match.id;
 
@@ -73,7 +79,9 @@ async function scanAndSendOnce() {
     // HIL
     if (hilPool) {
       const line = hilPool.lines.find((l) => l.condition === "0.5/1.0");
-      const oddsStr = line?.combinations.find((c) => c.str === "H")?.currentOdds;
+      const oddsStr = line?.combinations.find(
+        (c) => c.str === "H",
+      )?.currentOdds;
       const odds = parseFloat(oddsStr ?? "0");
 
       if (line && odds >= 2.0 && odds <= 2.2) {
@@ -95,7 +103,9 @@ async function scanAndSendOnce() {
     // FHL
     if (fhlPool) {
       const line = fhlPool.lines.find((l) => l.condition === "0.5/1.0");
-      const oddsStr = line?.combinations.find((c) => c.str === "H")?.currentOdds;
+      const oddsStr = line?.combinations.find(
+        (c) => c.str === "H",
+      )?.currentOdds;
       const odds = parseFloat(oddsStr ?? "0");
 
       if (line && odds >= 2.0 && odds <= 2.2) {
@@ -117,7 +127,9 @@ async function scanAndSendOnce() {
     // FCH
     if (fchPool) {
       const line = fchPool.lines.find((l) => l.condition === "1.5");
-      const oddsStr = line?.combinations.find((c) => c.str === "H")?.currentOdds;
+      const oddsStr = line?.combinations.find(
+        (c) => c.str === "H",
+      )?.currentOdds;
       const odds = parseFloat(oddsStr ?? "0");
 
       if (line && odds >= 2.0 && odds <= 2.2) {
@@ -127,7 +139,7 @@ async function scanAndSendOnce() {
           condition: line.condition,
           side: "H",
         });
-      
+
         if (tryMarkAsSent(alertKey)) {
           const text = `$[角球]{match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}角大 ${odds}`;
           await bot.sendMessage({ chat_id: channelId, text });
@@ -136,16 +148,30 @@ async function scanAndSendOnce() {
       }
     }
   }
+
+  const filteredMatches = allMatches.filter(
+    (m) =>
+      m.poolInfo.inplayPools.length > 0 &&
+      (m.runningResult?.awayScore ?? 0) === 0 &&
+      (m.runningResult?.homeScore ?? 0) === 0,
+  );
+
+  const currentTime = new Date();
+  const timeDiffToNextMatch =
+    Date.parse(filteredMatches[0]?.kickOffTime ?? "0") - currentTime.getTime();
+  const sleepTime = Math.max(60_000, timeDiffToNextMatch - 60_000);
+  return sleepTime;
 }
 
 async function runForever() {
   while (true) {
+    let sleepTime = 60_000; // 1 minute
     try {
-      await scanAndSendOnce();
+      sleepTime = await scanAndSendOnce();
     } catch (e) {
       console.error("scan error:", e);
     }
-    await sleep(60_000);
+    await sleep(sleepTime);
   }
 }
 
