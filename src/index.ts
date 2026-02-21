@@ -45,7 +45,7 @@ const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 function buildAlertKey(opts: {
   matchId: string | number;
-  oddsType: "HIL" | "FHL";
+  oddsType: "HIL" | "FHL" | "FCH";
   condition: string;  // e.g. "0.5/1.0"
   side: string;       // e.g. "H"
 }) {
@@ -53,6 +53,8 @@ function buildAlertKey(opts: {
 }
 
 async function scanAndSendOnce() {
+  let sleepTime = 60_000; // 1 minute
+  
   console.log(`[${new Date().toISOString()}] scanning...`);
 
   const allMatches = await footballApi.getAllFootballMatches();
@@ -66,6 +68,7 @@ async function scanAndSendOnce() {
 
     const hilPool = match.foPools.find((pool) => pool.oddsType === "HIL");
     const fhlPool = match.foPools.find((pool) => pool.oddsType === "FHL");
+    const fchPool = match.foPools.find((pool) => pool.oddsType === "FCH");
 
     // HIL
     if (hilPool) {
@@ -82,7 +85,7 @@ async function scanAndSendOnce() {
         });
 
         if (tryMarkAsSent(alertKey)) {
-          const text = `Match ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 全場 ${line.condition}大 ${odds}`;
+          const text = `${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 全場 ${line.condition}大 ${odds}`;
           await bot.sendMessage({ chat_id: channelId, text });
           console.log("sent:", alertKey);
         }
@@ -104,7 +107,29 @@ async function scanAndSendOnce() {
         });
 
         if (tryMarkAsSent(alertKey)) {
-          const text = `Match ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}大 ${odds}`;
+          const text = `${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}大 ${odds}`;
+          await bot.sendMessage({ chat_id: channelId, text });
+          console.log("sent:", alertKey);
+        }
+      }
+    }
+
+    // FCH
+    if (fchPool) {
+      const line = fchPool.lines.find((l) => l.condition === "1.5");
+      const oddsStr = line?.combinations.find((c) => c.str === "H")?.currentOdds;
+      const odds = parseFloat(oddsStr ?? "0");
+
+      if (line && odds >= 2.0 && odds <= 2.2) {
+        const alertKey = buildAlertKey({
+          matchId,
+          oddsType: "FCH",
+          condition: line.condition,
+          side: "H",
+        });
+      
+        if (tryMarkAsSent(alertKey)) {
+          const text = `$[角球]{match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}角大 ${odds}`;
           await bot.sendMessage({ chat_id: channelId, text });
           console.log("sent:", alertKey);
         }
