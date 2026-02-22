@@ -145,7 +145,7 @@ async function scanAndSendOnce() {
           });
 
           if (tryMarkAsSent(alertKey)) {
-            const text = `$[角球]{match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}角大 ${odds}`;
+            const text = `[角球]${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}角大 ${odds}`;
             await bot.sendMessage({ chat_id: channelId, text });
             console.log("sent:", alertKey);
           }
