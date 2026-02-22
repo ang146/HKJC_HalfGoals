@@ -126,24 +126,29 @@ async function scanAndSendOnce() {
 
     // FCH
     if (fchPool) {
-      const line = fchPool.lines.find((l) => l.condition === "1.5");
-      const oddsStr = line?.combinations.find(
-        (c) => c.str === "H",
-      )?.currentOdds;
-      const odds = parseFloat(oddsStr ?? "0");
+      const lines = fchPool.lines.filter(
+        (l) => l.condition === "1.5" || l.condition === "2.5",
+      );
 
-      if (line && odds >= 2.0 && odds <= 2.2) {
-        const alertKey = buildAlertKey({
-          matchId,
-          oddsType: "FCH",
-          condition: line.condition,
-          side: "H",
-        });
+      for (const line of lines) {
+        const oddsStr = line?.combinations.find(
+          (c) => c.str === "H",
+        )?.currentOdds;
+        const odds = parseFloat(oddsStr ?? "0");
 
-        if (tryMarkAsSent(alertKey)) {
-          const text = `$[角球]{match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}角大 ${odds}`;
-          await bot.sendMessage({ chat_id: channelId, text });
-          console.log("sent:", alertKey);
+        if (line && odds >= 2 && odds <= 2.25) {
+          const alertKey = buildAlertKey({
+            matchId,
+            oddsType: "FCH",
+            condition: line.condition,
+            side: "H",
+          });
+
+          if (tryMarkAsSent(alertKey)) {
+            const text = `$[角球]{match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}角大 ${odds}`;
+            await bot.sendMessage({ chat_id: channelId, text });
+            console.log("sent:", alertKey);
+          }
         }
       }
     }
