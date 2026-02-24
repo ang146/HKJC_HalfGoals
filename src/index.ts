@@ -164,7 +164,8 @@ async function scanAndSendOnce() {
   const currentTime = new Date();
   const timeDiffToNextMatch =
     Date.parse(filteredMatches[0]?.kickOffTime ?? "0") - currentTime.getTime();
-  const sleepTime = Math.max(60_000, timeDiffToNextMatch - 60_000);
+  let sleepTime = Math.max(60_000, timeDiffToNextMatch - 60_000);
+  sleepTime = Math.min(sleepTime, 60 * 60_000); // max 60 minutes
   return sleepTime;
 }
 
