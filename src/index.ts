@@ -170,66 +170,71 @@ async function checkResultsAndUpdate() {
 
   const matchResults = await footballApi.getAllFootballMatchesResults();
   for (const record of nullResultMatches) {
-    const alertKey = record.alert_key;
-    const matchResult = matchResults.find((m) => m.id === record.match_id);
+    try {
+      const alertKey = record.alert_key;
+      const matchResult = matchResults.find((m) => m.id === record.match_id);
 
-    if (!matchResult) {
-      if (
-        new Date(record.created_at ?? 0).getTime() <
-        Date.now() - 3 * 24 * 60 * 60_000
-      ) {
-        db.updateNotificationResult(alertKey, false);
-      }
-      continue;
-    }
-
-    switch (record.odds_type) {
-      case "HIL": {
-        const ftResult = matchResult.results.find(
-          (r) => r.stageId === 5 && r.resultType === 1,
-        );
-        const result =
-          (ftResult?.homeResult ?? 0) > 0 || (ftResult?.awayResult ?? 0) > 0;
-        db.updateNotificationResult(alertKey, result);
-
-        await botSendMessage({
-          text: `${matchResult.homeTeam.name_ch} 對 ${matchResult.awayTeam.name_ch} 全場大${result ? "✅" : "❌"}`,
-          reply_messageId: record.message_id,
-        });
+      if (!matchResult) {
+        if (
+          new Date(record.created_at ?? 0).getTime() <
+          Date.now() - 3 * 24 * 60 * 60_000
+        ) {
+          db.updateNotificationResult(alertKey, false);
+        }
         continue;
       }
 
-      case "FHL": {
-        const htResult = matchResult.results.find(
-          (r) => r.stageId === 3 && r.resultType === 1,
-        );
-        const htResultValue =
-          (htResult?.homeResult ?? 0) > 0 || (htResult?.awayResult ?? 0) > 0;
-        db.updateNotificationResult(alertKey, htResultValue);
+      switch (record.odds_type) {
+        case "HIL": {
+          const ftResult = matchResult.results.find(
+            (r) => r.stageId === 5 && r.resultType === 1,
+          );
+          const result =
+            (ftResult?.homeResult ?? 0) > 0 || (ftResult?.awayResult ?? 0) > 0;
+          db.updateNotificationResult(alertKey, result);
 
-        await botSendMessage({
-          text: `${matchResult.homeTeam.name_ch} 對 ${matchResult.awayTeam.name_ch} 半場大${htResultValue ? "✅" : "❌"}`,
-          reply_messageId: record.message_id,
-        });
-        continue;
+          await botSendMessage({
+            text: `${matchResult.homeTeam.name_ch} 對 ${matchResult.awayTeam.name_ch} 全場大${result ? "✅" : "❌"}`,
+            reply_messageId: record.message_id,
+          });
+          continue;
+        }
+
+        case "FHL": {
+          const htResult = matchResult.results.find(
+            (r) => r.stageId === 3 && r.resultType === 1,
+          );
+          const htResultValue =
+            (htResult?.homeResult ?? 0) > 0 || (htResult?.awayResult ?? 0) > 0;
+          db.updateNotificationResult(alertKey, htResultValue);
+
+          await botSendMessage({
+            text: `${matchResult.homeTeam.name_ch} 對 ${matchResult.awayTeam.name_ch} 半場大${htResultValue ? "✅" : "❌"}`,
+            reply_messageId: record.message_id,
+          });
+          continue;
+        }
+        case "FCH": {
+          const cornerResult = matchResult.results.find(
+            (r) => r.stageId === 3 && r.resultType === 2,
+          );
+
+          const htCorners =
+            (cornerResult?.homeResult ?? 0) + (cornerResult?.awayResult ?? 0);
+          const line = parseFloat(record.condition ?? "999");
+          const cornerResultValue = htCorners > line;
+          db.updateNotificationResult(alertKey, cornerResultValue);
+
+          await botSendMessage({
+            text: `${matchResult.homeTeam.name_ch} 對 ${matchResult.awayTeam.name_ch} 半場角球大${cornerResultValue ? "✅" : "❌"}`,
+            reply_messageId: record.message_id,
+          });
+          continue;
+        }
       }
-      case "FCH": {
-        const cornerResult = matchResult.results.find(
-          (r) => r.stageId === 3 && r.resultType === 2,
-        );
-
-        const htCorners =
-          (cornerResult?.homeResult ?? 0) + (cornerResult?.awayResult ?? 0);
-        const line = parseFloat(record.condition ?? "999");
-        const cornerResultValue = htCorners > line;
-        db.updateNotificationResult(alertKey, cornerResultValue);
-
-        await botSendMessage({
-          text: `${matchResult.homeTeam.name_ch} 對 ${matchResult.awayTeam.name_ch} 半場角球大${cornerResultValue ? "✅" : "❌"}`,
-          reply_messageId: record.message_id,
-        });
-        continue;
-      }
+    } finally {
+      // Prevent message sending too quickly.
+      await sleep(100);
     }
   }
 }
