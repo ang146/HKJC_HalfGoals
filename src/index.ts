@@ -234,7 +234,7 @@ async function checkResultsAndUpdate() {
       }
     } finally {
       // Prevent message sending too quickly.
-      await sleep(100);
+      await sleep(200);
     }
   }
 }
@@ -247,7 +247,7 @@ async function resultLoop() {
     } catch (e) {
       console.error("result loop error:", e);
     }
-    await sleep(60 * 60_000); // check every hour
+    await sleep(30 * 60_000); // check every half an hour
   }
 }
 
