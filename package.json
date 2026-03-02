@@ -13,9 +13,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/pino": "^7.0.5",
     "better-sqlite3": "^12.6.2",
     "dotenv": "^17.3.1",
     "hkjc-api": "^1.0.3",
+    "pino": "^10.3.1",
     "typescript-telegram-bot-api": "^0.12.0"
   },
   "devDependencies": {
