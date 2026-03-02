@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 
 import { ResultsFootballApi } from "./modules/resultsFootballApi";
 import { ResultDatabase } from "./database/resultDatabase";
+import { FootballMatch } from "hkjc-api";
 
 dotenv.config({ path: ".env" });
 
@@ -39,110 +40,90 @@ async function botSendMessage(opts: {
   return message.message_id;
 }
 
+async function scanGoal(match: FootballMatch, oddsType: string) {
+  const pool = match.foPools.find((p) => p.oddsType === oddsType);
+  if (pool) {
+    const line = pool.lines.find((l) => l.condition === "0.5/1.0");
+    if (!line) return;
+
+    const oddsStr = line?.combinations.find((c) => c.str === "H")?.currentOdds;
+    if (!oddsStr) return;
+
+    const odds = parseFloat(oddsStr ?? "0");
+
+    if (line && odds >= 2.0 && odds <= 2.2) {
+      const { alertKey } = db.upsertNotification({
+        matchId: match.id,
+        oddsType,
+        condition: line.condition,
+      });
+
+      const existing = db.getNotificationByAlertKey(alertKey);
+      if (!existing?.message_id) {
+        const text = `${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}大 ${odds}`;
+        const messageId = await botSendMessage({ text });
+        db.updateNotificationMessageId(alertKey, messageId);
+        console.log("sent:", alertKey);
+      }
+    }
+  }
+}
+
+async function scanCorner(match: FootballMatch, oddsType: string) {
+  const pool = match.foPools.find((p) => p.oddsType === oddsType);
+  if (pool) {
+    const lines = pool.lines.filter(
+      (l) => l.condition === "1.5" || l.condition === "2.5",
+    );
+
+    if (lines.length === 0) return;
+
+    for (const line of lines) {
+      const oddsStr = line?.combinations.find(
+        (c) => c.str === "H",
+      )?.currentOdds;
+      if (!oddsStr) return;
+
+      const odds = parseFloat(oddsStr);
+
+      if (line && odds >= 2 && odds <= 2.25) {
+        const { alertKey } = db.upsertNotification({
+          matchId: match.id,
+          oddsType: oddsType,
+          condition: line.condition,
+        });
+
+        const existing = db.getNotificationByAlertKey(alertKey);
+        if (!existing?.message_id) {
+          const text = `[角球]${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}角大 ${odds}`;
+          const messageId = await botSendMessage({ text });
+          db.updateNotificationMessageId(alertKey, messageId);
+          console.log("sent:", alertKey);
+        }
+      }
+    }
+  }
+}
+
 async function scanAndSendOnce() {
   console.log(`[${new Date().toISOString()}] scanning...`);
 
-  const allMatches = await footballApi.getAllFootballMatches();
+  const allMatches = await footballApi.getAllFootballMatches({
+    oddsTypes: ["FHL", "HIL", "FCH"],
+  });
 
   for (const match of allMatches) {
     if (match.poolInfo.inplayPools.length <= 0) continue;
     if (
       (match.runningResult?.awayScore ?? 1) > 0 ||
-      (match.runningResult?.homeScore ?? 1) > 0
-    )
-      continue;
-    if (
-      !match.poolInfo.inplayPools.includes("FHL") &&
-      !match.poolInfo.inplayPools.includes("HIL") &&
-      !match.poolInfo.inplayPools.includes("FCH")
+      (match.runningResult?.homeScore ?? 1) > 0 ||
+      (match.runningResult?.corner ?? 1) > 0
     )
       continue;
 
-    const matchId = match.id;
-
-    const hilPool = match.foPools.find((pool) => pool.oddsType === "HIL");
-    const fhlPool = match.foPools.find((pool) => pool.oddsType === "FHL");
-    const fchPool = match.foPools.find((pool) => pool.oddsType === "FCH");
-
-    // HIL 全場
-    if (hilPool) {
-      const line = hilPool.lines.find((l) => l.condition === "0.5/1.0");
-      const oddsStr = line?.combinations.find(
-        (c) => c.str === "H",
-      )?.currentOdds;
-      const odds = parseFloat(oddsStr ?? "0");
-
-      if (line && odds >= 2.0 && odds <= 2.2) {
-        const { alertKey } = db.upsertNotification({
-          matchId,
-          oddsType: "HIL",
-          condition: line.condition,
-        });
-
-        const existing = db.getNotificationByAlertKey(alertKey);
-        if (!existing?.message_id) {
-          const text = `${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 全場 ${line.condition}大 ${odds}`;
-          const messageId = await botSendMessage({ text });
-          db.updateNotificationMessageId(alertKey, messageId);
-          console.log("sent:", alertKey);
-        }
-      }
-    }
-
-    // FHL 半場
-    if (fhlPool) {
-      const line = fhlPool.lines.find((l) => l.condition === "0.5/1.0");
-      const oddsStr = line?.combinations.find(
-        (c) => c.str === "H",
-      )?.currentOdds;
-      const odds = parseFloat(oddsStr ?? "0");
-
-      if (line && odds >= 2.0 && odds <= 2.2) {
-        const { alertKey } = db.upsertNotification({
-          matchId,
-          oddsType: "FHL",
-          condition: line.condition,
-        });
-
-        const existing = db.getNotificationByAlertKey(alertKey);
-        if (!existing?.message_id) {
-          const text = `${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}大 ${odds}`;
-          const messageId = await botSendMessage({ text });
-          db.updateNotificationMessageId(alertKey, messageId);
-          console.log("sent:", alertKey);
-        }
-      }
-    }
-
-    // FCH 半場角球
-    if (fchPool) {
-      const lines = fchPool.lines.filter(
-        (l) => l.condition === "1.5" || l.condition === "2.5",
-      );
-
-      for (const line of lines) {
-        const oddsStr = line?.combinations.find(
-          (c) => c.str === "H",
-        )?.currentOdds;
-        const odds = parseFloat(oddsStr ?? "0");
-
-        if (line && odds >= 2 && odds <= 2.25) {
-          const { alertKey } = db.upsertNotification({
-            matchId,
-            oddsType: "FCH",
-            condition: line.condition,
-          });
-
-          const existing = db.getNotificationByAlertKey(alertKey);
-          if (!existing?.message_id) {
-            const text = `[角球]${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} 半場 ${line.condition}角大 ${odds}`;
-            const messageId = await botSendMessage({ text });
-            db.updateNotificationMessageId(alertKey, messageId);
-            console.log("sent:", alertKey);
-          }
-        }
-      }
-    }
+    await scanGoal(match, "HIL");
+    await scanGoal(match, "FHL");
+    await scanCorner(match, "FCH");
   }
 
   const filteredMatches = allMatches.filter(
@@ -168,7 +149,13 @@ async function checkResultsAndUpdate() {
   const nullResultMatches = db.getNotificationsWithNullResult();
   if (nullResultMatches.length === 0) return;
 
-  const matchResults = await footballApi.getAllFootballMatchesResults();
+  const matchResults = (
+    await footballApi.getAllFootballMatchesResults()
+  ).filter(
+    (m) =>
+      m.status.toLowerCase() === "inplaymatchended" ||
+      m.status.toLowerCase() === "firsthalfcompleted",
+  );
   for (const record of nullResultMatches) {
     try {
       const alertKey = record.alert_key;
@@ -189,6 +176,9 @@ async function checkResultsAndUpdate() {
           const ftResult = matchResult.results.find(
             (r) => r.stageId === 5 && r.resultType === 1,
           );
+
+          if (!ftResult) continue;
+
           const result =
             (ftResult?.homeResult ?? 0) > 0 || (ftResult?.awayResult ?? 0) > 0;
           db.updateNotificationResult(alertKey, result);
@@ -204,6 +194,9 @@ async function checkResultsAndUpdate() {
           const htResult = matchResult.results.find(
             (r) => r.stageId === 3 && r.resultType === 1,
           );
+
+          if (!htResult) continue;
+
           const htResultValue =
             (htResult?.homeResult ?? 0) > 0 || (htResult?.awayResult ?? 0) > 0;
           db.updateNotificationResult(alertKey, htResultValue);
@@ -218,6 +211,8 @@ async function checkResultsAndUpdate() {
           const cornerResult = matchResult.results.find(
             (r) => r.stageId === 3 && r.resultType === 2,
           );
+
+          if (!cornerResult) continue;
 
           const htCorners =
             (cornerResult?.homeResult ?? 0) + (cornerResult?.awayResult ?? 0);
@@ -234,20 +229,24 @@ async function checkResultsAndUpdate() {
       }
     } finally {
       // Prevent message sending too quickly.
-      await sleep(200);
+      await sleep(500);
     }
   }
 }
 
 async function resultLoop() {
-  await sleep(Math.random() * 15_000 + 5);
   while (true) {
     try {
-      await checkResultsAndUpdate();
+      const timeNow = new Date().getMinutes();
+      if (timeNow % 15 === 0) {
+        console.log("Checking results");
+        await checkResultsAndUpdate();
+        await sleep(13 * 60_000);
+      }
     } catch (e) {
       console.error("result loop error:", e);
     }
-    await sleep(30 * 60_000); // check every half an hour
+    await sleep(15_000);
   }
 }
 

@@ -50,7 +50,7 @@ export interface PoolInfoResult {
 
 export interface FootballMatchResult {
   id: string;
-  status: number;
+  status: string;
   frontEndId: string;
   matchDayOfWeek: number;
   matchNumber: number;
