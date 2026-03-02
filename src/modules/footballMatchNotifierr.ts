@@ -186,6 +186,7 @@ export class FootballMatchNotifier {
   }
 
   public async checkResultsAndUpdate() {
+    this.logger.debug("Checking results");
     const nullResultMatches = this.db.getNotificationsWithNullResult();
     if (nullResultMatches.length === 0) return;
 
@@ -287,5 +288,6 @@ export class FootballMatchNotifier {
         await sleep(500);
       }
     }
+    this.logger.debug("Result checking finished");
   }
 }

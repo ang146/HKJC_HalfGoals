@@ -1,5 +1,16 @@
 import { sleep } from "./utils";
 import { FootballMatchNotifier } from "./modules/footballMatchNotifierr";
+import { destination, pino } from "pino";
+
+const logger = pino(
+  {
+    name: "index",
+    level: process.env.LOG_LEVEL || "debug",
+    timestamp: pino.stdTimeFunctions.isoTime,
+    base: { pid: process.pid },
+  },
+  destination("./logs.log"),
+);
 
 const notifier = new FootballMatchNotifier();
 
@@ -8,11 +19,11 @@ async function resultLoop() {
     try {
       const timeNow = new Date().getMinutes();
       if (timeNow % 15 === 0) {
-        console.log("Checking results");
         await notifier.checkResultsAndUpdate();
         await sleep(13 * 60_000);
       }
     } catch (e) {
+      logger.error(`Result loop error: ${e}`);
       console.error("result loop error:", e);
     }
     await sleep(15_000);
@@ -25,6 +36,7 @@ async function scanLoop() {
     try {
       sleepTime = await notifier.scanAndSendOnce();
     } catch (e) {
+      logger.error(`Scanning loop error: ${e}`);
       console.error("scan error:", e);
     }
     await sleep(sleepTime);
