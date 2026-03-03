@@ -4,12 +4,11 @@ import { destination, pino } from "pino";
 const api = new ResultsFootballApi();
 
 async function main() {
-  /*
   const results = await api.getAllFootballMatches({
     oddsTypes: ["FHL", "HIL", "FCH"],
   });
   console.log(results[0]);
-  */
+
   /*
   const logger = pino(
     {

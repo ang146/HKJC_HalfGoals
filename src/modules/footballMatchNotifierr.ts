@@ -149,8 +149,8 @@ export class FootballMatchNotifier {
     for (const match of allMatches) {
       if (match.poolInfo.inplayPools.length <= 0) continue;
       if (
-        (match.runningResult?.awayScore ?? 1) > 0 ||
-        (match.runningResult?.homeScore ?? 1) > 0 ||
+        (match.runningResult?.awayScore ?? 1) > 0 &&
+        (match.runningResult?.homeScore ?? 1) > 0 &&
         (match.runningResult?.corner ?? 1) > 0
       )
         continue;
@@ -188,7 +188,10 @@ export class FootballMatchNotifier {
   public async checkResultsAndUpdate() {
     this.logger.debug("Checking results");
     const nullResultMatches = this.db.getNotificationsWithNullResult();
-    if (nullResultMatches.length === 0) return;
+    if (nullResultMatches.length === 0) {
+      this.logger.debug("No result need to be checked.");
+      return;
+    }
 
     const matchResults = (
       await this.footballApi.getAllFootballMatchesResults()
