@@ -2,14 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
+const LATEST_DB_VERSION = 2;
+
 export interface NotificationRecord {
   alert_key: string;
   created_at: string;
   match_id: string;
   odds_type: string | null;
   condition: string | null;
-  result: 0 | 1 | null; // SQLite boolean-ish
+  result: 0 | 1 | null;
   message_id: number | null;
+  match_time: number | null;
+  home_team_id: string | null;
+  away_team_id: string | null;
+  tournament_id: string | null;
 }
 
 export type UpsertNotificationOptions = {
@@ -27,6 +33,11 @@ export type UpsertNotificationOptions = {
 
   // optional createdAt override (default now)
   createdAt?: string;
+
+  matchTime?: number | null;
+  homeTeamId?: string | null;
+  awayTeamId?: string | null;
+  tournamentId?: string | null;
 };
 
 export class ResultDatabase {
@@ -92,13 +103,13 @@ export class ResultDatabase {
 
     const currentVersion = currentVersionRow.v ?? 0;
 
-    if (currentVersion >= 1) {
+    if (currentVersion >= LATEST_DB_VERSION) {
       // Ensure notifications table exists even if someone manually inserted versions
       this.ensureNotificationsTable();
       return;
     }
 
-    if (currentVersion === 0) {
+    if (currentVersion < 1) {
       const tx = this.db.transaction(() => {
         this.ensureNotificationsTable();
 
@@ -160,18 +171,38 @@ export class ResultDatabase {
 
       tx();
     }
+
+    if (currentVersion < 2) {
+      this.db.transaction(() => {
+        this.db.exec(`
+      ALTER TABLE notifications ADD COLUMN match_time    INTEGER;
+      ALTER TABLE notifications ADD COLUMN home_team_id  TEXT;
+      ALTER TABLE notifications ADD COLUMN away_team_id  TEXT;
+      ALTER TABLE notifications ADD COLUMN tournament_id TEXT;
+      `);
+
+        //write version 2
+        this.db
+          .prepare(`INSERT INTO versions (version, created_at) VALUES (?, ?)`)
+          .run(2, new Date().toISOString());
+      })();
+    }
   }
 
   private ensureNotificationsTable() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS notifications (
-        alert_key  TEXT PRIMARY KEY,
-        created_at TEXT NOT NULL,
-        match_id   TEXT NOT NULL,
-        odds_type  TEXT,
-        condition  TEXT,
-        result     INTEGER,  -- 0/1, nullable
-        message_id INTEGER      -- nullable
+        alert_key      TEXT PRIMARY KEY,
+        created_at     TEXT NOT NULL,
+        match_id       TEXT NOT NULL,
+        odds_type      TEXT,
+        condition      TEXT,
+        result         INTEGER,
+        message_id     INTEGER,
+        match_time     INTEGER,
+        home_team_id   TEXT,
+        away_team_id   TEXT,
+        tournament_id  TEXT
       );
 
       CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_match_odds_cond
@@ -179,7 +210,7 @@ export class ResultDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_notifications_created_at
       ON notifications (created_at);
-    `);
+  `);
   }
 
   private parseLegacyAlertKey(alertKey: string): {
@@ -208,14 +239,19 @@ export class ResultDatabase {
     // Upsert: insert if new; if exists, update only fields that are provided (result/message_id)
     this.upsertNotificationStmt = this.db.prepare(`
       INSERT INTO notifications (
-        alert_key, created_at, match_id, odds_type, condition, result, message_id
+        alert_key, created_at, match_id, odds_type, condition, result, message_id,
+        match_time, home_team_id, away_team_id, tournament_id
       ) VALUES (
-        @alert_key, @created_at, @match_id, @odds_type, @condition, @result, @message_id
+        @alert_key, @created_at, @match_id, @odds_type, @condition, @result, @message_id,
+        @match_time, @home_team_id, @away_team_id, @tournament_id
       )
       ON CONFLICT(alert_key) DO UPDATE SET
-        -- keep original created_at / match_id / odds_type / condition
-        result     = COALESCE(excluded.result, notifications.result),
-        message_id = COALESCE(excluded.message_id, notifications.message_id)
+        result        = COALESCE(excluded.result, notifications.result),
+        message_id    = COALESCE(excluded.message_id, notifications.message_id),
+        match_time    = COALESCE(excluded.match_time, notifications.match_time),
+        home_team_id  = COALESCE(excluded.home_team_id, notifications.home_team_id),
+        away_team_id  = COALESCE(excluded.away_team_id, notifications.away_team_id),
+        tournament_id = COALESCE(excluded.tournament_id, notifications.tournament_id)
     `);
 
     this.getLatestByMatchOddsStmt = this.db.prepare(`
@@ -294,6 +330,10 @@ export class ResultDatabase {
               ? 1
               : 0,
       message_id: options.messageId ?? null,
+      match_time: options.matchTime ?? null,
+      home_team_id: options.homeTeamId ?? null,
+      away_team_id: options.awayTeamId ?? null,
+      tournament_id: options.tournamentId ?? null,
     });
 
     return { alertKey };

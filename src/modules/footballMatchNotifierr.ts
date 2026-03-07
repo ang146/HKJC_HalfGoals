@@ -1,12 +1,11 @@
 import { ReplyParameters, TelegramBot } from "typescript-telegram-bot-api";
 import dotenv from "dotenv";
-
 import { ResultsFootballApi } from "../modules/resultsFootballApi";
 import { ResultDatabase } from "../database/resultDatabase";
 import { FootballMatch } from "hkjc-api";
 import { sleep } from "../utils";
-
 import { destination, Logger, pino } from "pino";
+import { JSDOM } from "jsdom";
 
 export class FootballMatchNotifier {
   private channelId: string;
@@ -61,6 +60,18 @@ export class FootballMatchNotifier {
     return message.message_id;
   }
 
+  private async getLiveMatchTime(frontEndId: string): Promise<number> {
+    const res = await fetch(`https://g10oal.com/match/${frontEndId}/info`);
+    const text = await res.text();
+    const doc = new JSDOM(text);
+    const timeStr = doc.window.document
+      .getElementsByClassName("live-status-live")
+      .item(0)?.textContent;
+
+    const regexMatch = timeStr?.match(/\d+/);
+    return regexMatch ? parseInt(regexMatch[0], 10) : -1;
+  }
+
   public async scanGoal(match: FootballMatch, oddsType: string) {
     const pool = match.foPools.find((p) => p.oddsType === oddsType);
     if (pool) {
@@ -78,15 +89,20 @@ export class FootballMatchNotifier {
       );
 
       if (line && odds >= 2.0 && odds <= 2.2) {
+        const matchTime = await this.getLiveMatchTime(match.frontEndId);
         const { alertKey } = this.db.upsertNotification({
           matchId: match.id,
           oddsType,
           condition: line.condition,
+          matchTime,
+          homeTeamId: match.homeTeam.id,
+          awayTeamId: match.awayTeam.id,
+          tournamentId: match.tournament.id,
         });
 
         const existing = this.db.getNotificationByAlertKey(alertKey);
         if (!existing?.message_id) {
-          const text = `${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}大 ${odds}`;
+          const text = `${matchTime}' ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}大 ${odds}`;
           const messageId = await this.botSendMessage({ text });
           this.db.updateNotificationMessageId(alertKey, messageId);
           this.logger.info(
@@ -118,15 +134,21 @@ export class FootballMatchNotifier {
         );
 
         if (line && odds >= 2 && odds <= 2.25) {
+          const matchTime = await this.getLiveMatchTime(match.frontEndId);
           const { alertKey } = this.db.upsertNotification({
             matchId: match.id,
-            oddsType: oddsType,
+            oddsType,
             condition: line.condition,
+            matchTime,
+            homeTeamId: match.homeTeam.id,
+            awayTeamId: match.awayTeam.id,
+            tournamentId: match.tournament.id,
           });
 
           const existing = this.db.getNotificationByAlertKey(alertKey);
           if (!existing?.message_id) {
-            const text = `[角球]${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}角大 ${odds}`;
+            const matchTime = await this.getLiveMatchTime(match.frontEndId);
+            const text = `[角球]${matchTime}' ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}角大 ${odds}`;
             const messageId = await this.botSendMessage({ text });
             this.db.updateNotificationMessageId(alertKey, messageId);
             console.log("sent:", alertKey);
@@ -151,7 +173,7 @@ export class FootballMatchNotifier {
       if (
         (match.runningResult?.awayScore ?? 1) > 0 &&
         (match.runningResult?.homeScore ?? 1) > 0 &&
-        (match.runningResult?.corner ?? 1) > 0
+        (match.runningResult?.corner ?? 2) >= 2
       )
         continue;
 
