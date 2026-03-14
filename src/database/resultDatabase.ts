@@ -18,6 +18,18 @@ export interface NotificationRecord {
   tournament_id: string | null;
 }
 
+export type GetNotificationsFilter = {
+  homeTeamId?: string;
+  awayTeamId?: string;
+  tournamentId?: string;
+  oddsType?: string;
+  condition?: string | undefined;
+  matchId?: string;
+  createTimeAfter?: string;
+  resultIsNull?: boolean;
+  numberRecords?: number;
+};
+
 export type UpsertNotificationOptions = {
   // these fields are required to identify the alert
   matchId: string; // cannot be null
@@ -48,7 +60,6 @@ export class ResultDatabase {
   private upsertNotificationStmt!: Database.Statement;
   private getLatestByMatchOddsStmt!: Database.Statement;
   private getByAlertKeyStmt!: Database.Statement;
-  private getByResultIsNullStmt!: Database.Statement;
   private updateResultStmt!: Database.Statement;
   private updateMessageIdStmt!: Database.Statement;
 
@@ -269,12 +280,6 @@ export class ResultDatabase {
       LIMIT 1
     `);
 
-    this.getByResultIsNullStmt = this.db.prepare(`
-      SELECT alert_key, created_at, match_id, odds_type, condition, result, message_id
-      FROM notifications
-      WHERE result IS NULL
-    `);
-
     this.updateResultStmt = this.db.prepare(`
       UPDATE notifications
       SET result = ?
@@ -339,6 +344,50 @@ export class ResultDatabase {
     return { alertKey };
   }
 
+  getNotifications(filter: GetNotificationsFilter = {}): NotificationRecord[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filter.homeTeamId !== undefined) {
+      conditions.push("home_team_id = ?");
+      params.push(filter.homeTeamId);
+    }
+    if (filter.awayTeamId !== undefined) {
+      conditions.push("away_team_id = ?");
+      params.push(filter.awayTeamId);
+    }
+    if (filter.tournamentId !== undefined) {
+      conditions.push("tournament_id = ?");
+      params.push(filter.tournamentId);
+    }
+    if (filter.oddsType !== undefined) {
+      conditions.push("odds_type = ?");
+      params.push(filter.oddsType);
+    }
+    if (filter.condition !== undefined) {
+      conditions.push("condition = ?");
+      params.push(filter.condition);
+    }
+    if (filter.matchId !== undefined) {
+      conditions.push("match_id = ?");
+      params.push(filter.matchId);
+    }
+    if (filter.createTimeAfter !== undefined) {
+      conditions.push("datetime(created_at) > datetime(?)");
+      params.push(filter.createTimeAfter);
+    }
+    if (filter.resultIsNull !== undefined) {
+      if (filter.resultIsNull === true) conditions.push("result IS NULL");
+      else conditions.push("result IS NOT NULL");
+    }
+
+    const where =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const sql = `SELECT * FROM notifications ${where} ORDER BY created_at DESC LIMIT ?`;
+
+    return this.db.prepare(sql).all(...params) as NotificationRecord[];
+  }
+
   getNotificationByAlertKey(alertKey: string): NotificationRecord | null {
     const row = this.getByAlertKeyStmt.get(alertKey) as
       | NotificationRecord
@@ -360,13 +409,6 @@ export class ResultDatabase {
     ) as NotificationRecord | undefined;
 
     return row ?? null;
-  }
-
-  getNotificationsWithNullResult(): NotificationRecord[] {
-    const rows = this.getByResultIsNullStmt.all() as
-      | NotificationRecord[]
-      | undefined;
-    return rows ?? [];
   }
 
   updateNotificationResult(alertKey: string, result: boolean | null) {

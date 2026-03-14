@@ -72,6 +72,114 @@ export class FootballMatchNotifier {
     return regexMatch ? parseInt(regexMatch[0], 10) : -1;
   }
 
+  private constructAlertMessage(
+    match: FootballMatch,
+    matchTime: number,
+    oddsType: string,
+    odds: number,
+    condition?: string,
+  ): string {
+    let messageText = "";
+    switch (oddsType) {
+      case "FCH": {
+        messageText = `[角球]${matchTime}' ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${condition}角大 ${odds}`;
+        break;
+      }
+      case "HIL":
+      case "FHL": {
+        messageText = `${matchTime}' ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${condition}大 ${odds}`;
+        break;
+      }
+    }
+
+    const homeResults = this.db
+      .getNotifications({
+        homeTeamId: match.homeTeam.id,
+        oddsType,
+        condition,
+        resultIsNull: false,
+        numberRecords: 100,
+      })
+      .concat(
+        this.db.getNotifications({
+          awayTeamId: match.homeTeam.id,
+          oddsType,
+          condition,
+          resultIsNull: false,
+          numberRecords: 100,
+        }),
+      );
+
+    const awayResults = this.db
+      .getNotifications({
+        homeTeamId: match.awayTeam.id,
+        oddsType,
+        condition,
+        resultIsNull: false,
+        numberRecords: 100,
+      })
+      .concat(
+        this.db.getNotifications({
+          awayTeamId: match.awayTeam.id,
+          oddsType,
+          condition,
+          resultIsNull: false,
+          numberRecords: 100,
+        }),
+      );
+
+    const tournamentResults = this.db.getNotifications({
+      tournamentId: match.tournament.id,
+      oddsType,
+      condition,
+      resultIsNull: false,
+      numberRecords: 100,
+    });
+
+    const recentDateRange = new Date(match.kickOffTime);
+    recentDateRange.setDate(recentDateRange.getDate() - 5);
+    const recentMatchesResults = this.db.getNotifications({
+      createTimeAfter: recentDateRange.toDateString(),
+      oddsType,
+      condition,
+      resultIsNull: false,
+      numberRecords: 10,
+    });
+
+    if (homeResults.length > 10) {
+      const total = homeResults.length;
+      const wins = homeResults
+        .map((rec) => rec.result ?? (0 as number))
+        .reduce((sum, cr) => sum + cr);
+      messageText += `\n主隊近${total}場成功率: ${((wins / total) * 100).toFixed(1)}%`;
+    }
+
+    if (awayResults.length > 10) {
+      const total = awayResults.length;
+      const wins = awayResults
+        .map((rec) => rec.result ?? (0 as number))
+        .reduce((sum, cr) => sum + cr);
+      messageText += `\n客隊近${total}場成功率: ${((wins / total) * 100).toFixed(1)}%`;
+    }
+
+    if (tournamentResults.length > 10) {
+      const total = tournamentResults.length;
+      const wins = tournamentResults
+        .map((rec) => rec.result ?? (0 as number))
+        .reduce((sum, cr) => sum + cr);
+      messageText += `\n是次聯賽近${total}場成功率: ${((wins / total) * 100).toFixed(1)}%`;
+    }
+
+    if (recentMatchesResults.length > 0) {
+      messageText += `\n近${recentMatchesResults.length}場通知結果:`;
+      messageText += recentMatchesResults
+        .map((rec) => (rec.result ? "✅" : "❌"))
+        .join();
+    }
+
+    return messageText;
+  }
+
   public async scanGoal(match: FootballMatch, oddsType: string) {
     const pool = match.foPools.find((p) => p.oddsType === oddsType);
     if (pool) {
@@ -102,7 +210,13 @@ export class FootballMatchNotifier {
 
         const existing = this.db.getNotificationByAlertKey(alertKey);
         if (!existing?.message_id) {
-          const text = `${matchTime}' ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}大 ${odds}`;
+          const text = this.constructAlertMessage(
+            match,
+            matchTime,
+            oddsType,
+            odds,
+            line.condition,
+          );
           const messageId = await this.botSendMessage({ text });
           this.db.updateNotificationMessageId(alertKey, messageId);
           this.logger.info(
@@ -147,8 +261,13 @@ export class FootballMatchNotifier {
 
           const existing = this.db.getNotificationByAlertKey(alertKey);
           if (!existing?.message_id) {
-            const matchTime = await this.getLiveMatchTime(match.frontEndId);
-            const text = `[角球]${matchTime}' ${match.homeTeam.name_ch} vs ${match.awayTeam.name_ch} ${line.condition}角大 ${odds}`;
+            const text = this.constructAlertMessage(
+              match,
+              matchTime,
+              oddsType,
+              odds,
+              line.condition,
+            );
             const messageId = await this.botSendMessage({ text });
             this.db.updateNotificationMessageId(alertKey, messageId);
             console.log("sent:", alertKey);
@@ -209,7 +328,7 @@ export class FootballMatchNotifier {
 
   public async checkResultsAndUpdate() {
     this.logger.debug("Checking results");
-    const nullResultMatches = this.db.getNotificationsWithNullResult();
+    const nullResultMatches = this.db.getNotifications({ resultIsNull: true });
     if (nullResultMatches.length === 0) {
       this.logger.debug("No result need to be checked.");
       return;
