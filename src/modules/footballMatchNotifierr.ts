@@ -139,7 +139,7 @@ export class FootballMatchNotifier {
     const recentDateRange = new Date(match.kickOffTime);
     recentDateRange.setDate(recentDateRange.getDate() - 5);
     const recentMatchesResults = this.db.getNotifications({
-      createTimeAfter: recentDateRange.toDateString(),
+      createTimeAfter: recentDateRange.toISOString(),
       oddsType,
       condition,
       resultIsNull: false,
