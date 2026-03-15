@@ -380,9 +380,9 @@ export class ResultDatabase {
       if (filter.resultIsNull === true) conditions.push("result IS NULL");
       else conditions.push("result IS NOT NULL");
     }
-    if (filter.numberRecords !== undefined) {
-      params.push(filter.numberRecords);
-    }
+
+    const limit = filter.numberRecords ?? 100;
+    params.push(limit);
 
     const where =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

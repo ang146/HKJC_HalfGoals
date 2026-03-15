@@ -98,7 +98,6 @@ export class FootballMatchNotifier {
         oddsType,
         condition,
         resultIsNull: false,
-        numberRecords: 100,
       })
       .concat(
         this.db.getNotifications({
@@ -106,7 +105,6 @@ export class FootballMatchNotifier {
           oddsType,
           condition,
           resultIsNull: false,
-          numberRecords: 100,
         }),
       );
 
@@ -116,7 +114,6 @@ export class FootballMatchNotifier {
         oddsType,
         condition,
         resultIsNull: false,
-        numberRecords: 100,
       })
       .concat(
         this.db.getNotifications({
@@ -124,7 +121,6 @@ export class FootballMatchNotifier {
           oddsType,
           condition,
           resultIsNull: false,
-          numberRecords: 100,
         }),
       );
 
@@ -133,7 +129,6 @@ export class FootballMatchNotifier {
       oddsType,
       condition,
       resultIsNull: false,
-      numberRecords: 100,
     });
 
     const recentDateRange = new Date(match.kickOffTime);
