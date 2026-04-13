@@ -1,7 +1,7 @@
 import { ReplyParameters, TelegramBot } from "typescript-telegram-bot-api";
 import dotenv from "dotenv";
 import { ResultsFootballApi } from "../modules/resultsFootballApi";
-import { ResultDatabase } from "../database/resultDatabase";
+import { NotificationRecord, ResultDatabase } from "../database/resultDatabase";
 import { FootballMatch } from "hkjc-api";
 import { sleep } from "../utils";
 import { destination, Logger, pino } from "pino";
@@ -92,7 +92,7 @@ export class FootballMatchNotifier {
       }
     }
 
-    const homeResults = this.db
+    const homeResultsRaw = this.db
       .getNotifications({
         homeTeamId: match.homeTeam.id,
         oddsType,
@@ -108,7 +108,12 @@ export class FootballMatchNotifier {
         }),
       );
 
-    const awayResults = this.db
+    const homeResults = homeResultsRaw.slice(
+      0,
+      Math.min(20, homeResultsRaw.length),
+    );
+
+    const awayResultsRaw = this.db
       .getNotifications({
         homeTeamId: match.awayTeam.id,
         oddsType,
@@ -124,11 +129,17 @@ export class FootballMatchNotifier {
         }),
       );
 
+    const awayResults = awayResultsRaw.slice(
+      0,
+      Math.min(20, awayResultsRaw.length),
+    );
+
     const tournamentResults = this.db.getNotifications({
       tournamentId: match.tournament.id,
       oddsType,
       condition,
       resultIsNull: false,
+      numberRecords: 20,
     });
 
     const recentDateRange = new Date(match.kickOffTime);
@@ -141,35 +152,43 @@ export class FootballMatchNotifier {
       numberRecords: 10,
     });
 
-    if (homeResults.length > 10) {
-      const total = homeResults.length;
-      const wins = homeResults
+    function calculateSuccessRate(results: NotificationRecord[]) {
+      const total = results.length;
+      const wins = results
         .map((rec) => rec.result ?? (0 as number))
-        .reduce((sum, cr) => sum + cr);
-      messageText += `\n主隊近${total}場成功率: ${((wins / total) * 100).toFixed(1)}%`;
+        .reduce((sum, cr) => sum + cr, 0);
+      return total > 0 ? ((wins / total) * 100).toFixed(1) : "N/A";
     }
 
-    if (awayResults.length > 10) {
-      const total = awayResults.length;
-      const wins = awayResults
-        .map((rec) => rec.result ?? (0 as number))
-        .reduce((sum, cr) => sum + cr);
-      messageText += `\n客隊近${total}場成功率: ${((wins / total) * 100).toFixed(1)}%`;
+    if (homeResults.length >= 10) {
+      const overTen = homeResults.length > 10;
+      const winRateAll = calculateSuccessRate(homeResults);
+      const winRateTen = calculateSuccessRate(homeResults.slice(0, 10));
+
+      messageText += `\n主隊近10${overTen ? `(${homeResults.length})` : ""}場成功率: ${winRateTen}%${overTen ? `(${winRateAll}%)` : ""}`;
     }
 
-    if (tournamentResults.length > 10) {
-      const total = tournamentResults.length;
-      const wins = tournamentResults
-        .map((rec) => rec.result ?? (0 as number))
-        .reduce((sum, cr) => sum + cr);
-      messageText += `\n是次聯賽近${total}場成功率: ${((wins / total) * 100).toFixed(1)}%`;
+    if (awayResults.length >= 10) {
+      const overTen = awayResults.length > 10;
+      const winRateAll = calculateSuccessRate(awayResults);
+      const winRateTen = calculateSuccessRate(awayResults.slice(0, 10));
+
+      messageText += `\n客隊近10${overTen ? `(${awayResults.length})` : ""}場成功率: ${winRateTen}%${overTen ? `(${winRateAll}%)` : ""}`;
+    }
+
+    if (tournamentResults.length >= 10) {
+      const overTen = tournamentResults.length > 10;
+      const winRateAll = calculateSuccessRate(tournamentResults);
+      const winRateTen = calculateSuccessRate(tournamentResults.slice(0, 10));
+
+      messageText += `\n是次聯賽近10${overTen ? `(${tournamentResults.length})` : ""}場成功率: ${winRateTen}%${overTen ? `(${winRateAll}%)` : ""}`;
     }
 
     if (recentMatchesResults.length > 0) {
       messageText += `\n近${recentMatchesResults.length}場通知結果:`;
       messageText += recentMatchesResults
         .map((rec) => (rec.result ? "✅" : "❌"))
-        .join();
+        .join("");
     }
 
     return messageText;
